@@ -112,7 +112,7 @@ describe('graphStore', () => {
       const id2 = useGraphStore.getState().addNode('math.sqrt', 200, 0);
 
       useGraphStore.getState().executeAll();
-      useGraphStore.getState().dirtyNodeIds.size === 0; // 确认清空
+      expect(useGraphStore.getState().dirtyNodeIds.size).toBe(0); // 确认清空
 
       useGraphStore.getState().connectNodes(id1, 'result', id2, 'x');
       expect(useGraphStore.getState().dirtyNodeIds.has(id2)).toBe(true);
@@ -184,11 +184,14 @@ describe('graphStore', () => {
   describe('executeDirty', () => {
     it('无脏节点_不执行', () => {
       useGraphStore.getState().addNode('math.add', 0, 0);
+      useGraphStore.getState().setNodeInput(useGraphStore.getState().nodes[0].id, 'a', 3);
+      useGraphStore.getState().setNodeInput(useGraphStore.getState().nodes[0].id, 'b', 5);
       useGraphStore.getState().executeAll();
 
-      const nodesBefore = [...useGraphStore.getState().nodes];
+      const outputsBefore = new Map(useGraphStore.getState().executionResults);
       useGraphStore.getState().executeDirty();
-      // 节点状态不应改变
+      // 节点输出不应改变
+      expect(useGraphStore.getState().executionResults).toEqual(outputsBefore);
       expect(useGraphStore.getState().dirtyNodeIds.size).toBe(0);
     });
 

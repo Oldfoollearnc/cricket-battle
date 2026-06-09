@@ -8,7 +8,7 @@
 // ============================================
 
 /** 数据类型枚举 */
-export type DataType = 'number' | 'string' | 'array' | 'table';
+export type DataType = 'number' | 'string' | 'array' | 'table' | 'chart';
 
 /** 端口定义 */
 export interface PortDefinition {
@@ -150,3 +150,142 @@ export interface UnitCategory {
   units: string[];
   conversions: UnitConversion[];
 }
+
+// ============================================
+// 计算后端抽象 (Module 2)
+// ============================================
+
+/** 计算后端接口 -- 支持 JS/WASM 双实现 */
+export interface IComputeBackend {
+  /** 后端标识 */
+  readonly name: string;
+  /** 执行单个节点的计算 */
+  computeNode(
+    type: string,
+    inputs: Map<string, Value>
+  ): Map<string, Value>;
+  /** 批量执行（WASM 后端可利用 SIMD 加速） */
+  computeBatch?(
+    tasks: Array<{ type: string; inputs: Map<string, Value> }>
+  ): Array<Map<string, Value>>;
+  /** 释放资源 */
+  destroy(): void;
+}
+
+// ============================================
+// 协作层接口 (Module 3)
+// ============================================
+
+/** 协作用户信息 */
+export interface CollabUser {
+  id: string;
+  name: string;
+  color: string;
+  cursor?: { x: number; y: number };
+  selectedNodeId?: string;
+}
+
+/** 协作状态变更事件 */
+export interface CollabChangeEvent {
+  type: 'node:add' | 'node:remove' | 'node:update' |
+        'connection:add' | 'connection:remove' |
+        'user:join' | 'user:leave';
+  userId: string;
+  timestamp: number;
+  payload: unknown;
+}
+
+// ============================================
+// 历史对比接口 (Module 4)
+// ============================================
+
+/** 单节点差异 */
+export interface NodeDiff {
+  nodeId: string;
+  nodeType: string;
+  outputsA: Map<string, Value>;
+  outputsB: Map<string, Value>;
+  hasDifference: boolean;
+}
+
+/** 路径对比结果 */
+export interface PathDiffResult {
+  pathA: string[];
+  pathB: string[];
+  nodeDiffs: NodeDiff[];
+}
+
+// ============================================
+// 多模态输出接口 (Module 5)
+// ============================================
+
+/** 图表配置 */
+export interface ChartConfig {
+  chartType: 'line' | 'bar' | 'scatter' | 'pie';
+  xAxis?: string;
+  yAxis?: string;
+  title?: string;
+}
+
+/** 公式配置 */
+export interface FormulaConfig {
+  template?: string;
+  precision?: number;
+}
+
+/** 文本配置 */
+export interface TextConfig {
+  template?: string;
+  fontSize?: number;
+}
+
+/** 输出节点类型定义 */
+export interface OutputNodeDefinition {
+  outputFormat: 'number' | 'chart' | 'formula' | 'text' | 'table';
+  renderConfig?: ChartConfig | FormulaConfig | TextConfig;
+}
+
+// ============================================
+// 智能联想接口 (Module 6)
+// ============================================
+
+/** 节点推荐 */
+export interface NodeRecommendation {
+  nodeType: string;
+  reason: string;
+  score: number;
+  suggestedConnection?: {
+    sourcePort: string;
+    targetPort: string;
+  };
+}
+
+/** 图上下文（推荐引擎用） */
+export interface GraphContext {
+  nodes: CanvasNode[];
+  connections: Connection[];
+  nodeUsageStats: Map<string, number>;
+}
+
+// ============================================
+// 设置 Store
+// ============================================
+
+export interface SettingsState {
+  autoSnapshot: boolean;
+  snapshotInterval: number;
+  computeBackend: 'js' | 'wasm';
+  showRecommendations: boolean;
+  theme: 'dark' | 'light';
+}
+
+// ============================================
+// 服务端 WebSocket 协议
+// ============================================
+
+export type WsMessage =
+  | { type: 'join'; roomId: string; user: CollabUser }
+  | { type: 'leave'; roomId: string; userId: string }
+  | { type: 'sync'; roomId: string; update: Uint8Array }
+  | { type: 'awareness'; roomId: string; update: Uint8Array }
+  | { type: 'snapshot'; roomId: string; snapshot: SerializedCanvas };

@@ -8,7 +8,7 @@ import { create } from 'zustand';
 import { CanvasNode, Connection, Value, Viewport, SerializedCanvas } from '../types';
 import { executeGraph, serializeCanvas, deserializeCanvas } from '../engine/GraphExecutor';
 import { getNodeDefinition } from '../engine/NodeRegistry';
-import * as HistoryTree from '../history/HistoryTree';
+import { HistoryTreeClass, createHistoryTree } from '../history/HistoryTree';
 import { v4 as uuidv4 } from 'uuid';
 
 interface CanvasState {
@@ -49,6 +49,8 @@ interface CanvasState {
   // 清空
   clearAll: () => void;
 }
+
+const _historyTree: HistoryTreeClass = createHistoryTree();
 
 export const useCanvasStore = create<CanvasState>((set, get) => ({
   nodes: [],
@@ -161,11 +163,11 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   commitHistory: (label?: string) => {
     const { nodes, connections, viewport } = get();
     const snapshot = serializeCanvas(nodes, connections, viewport);
-    HistoryTree.commit(snapshot, label);
+    _historyTree.commit(snapshot, label);
   },
 
   checkoutHistory: (nodeId: string) => {
-    const snapshot = HistoryTree.checkout(nodeId);
+    const snapshot = _historyTree.checkout(nodeId);
     if (!snapshot) return;
 
     const { nodes, connections, viewport } = deserializeCanvas(snapshot);
@@ -173,7 +175,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   },
 
   forkHistory: (nodeId: string, label?: string) => {
-    const node = HistoryTree.fork(nodeId, label);
+    const node = _historyTree.fork(nodeId, label);
     if (!node) return;
 
     const { nodes, connections, viewport } = deserializeCanvas(node.snapshot);
@@ -197,6 +199,6 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       viewport: { x: 400, y: 300, zoom: 1 },
       selectedNodeId: null,
     });
-    HistoryTree.clearHistory();
+    _historyTree.clearHistory();
   },
 }));

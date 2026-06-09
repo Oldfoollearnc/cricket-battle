@@ -6,7 +6,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useCanvasStore } from '../store/canvasStore';
 import { getAllNodeDefinitions, getCategories } from '../engine/NodeRegistry';
-import * as HistoryTree from '../history/HistoryTree';
+import { useHistoryStore } from '../store/historyStore';
 
 const Toolbar: React.FC = () => {
   const [showNodeMenu, setShowNodeMenu] = useState(false);
@@ -14,6 +14,7 @@ const Toolbar: React.FC = () => {
   const menuRef = useRef<HTMLDivElement>(null);
 
   const { addNode, executeAll, commitHistory, clearAll, viewport } = useCanvasStore();
+  const { getAllNodes } = useHistoryStore();
 
   const handleAddNode = useCallback(
     (type: string) => {
@@ -52,7 +53,7 @@ const Toolbar: React.FC = () => {
   }, []);
 
   const categories = getCategories();
-  const historyNodes = HistoryTree.getAllNodes();
+  const historyNodes = getAllNodes();
 
   return (
     <div style={styles.toolbar} ref={menuRef}>

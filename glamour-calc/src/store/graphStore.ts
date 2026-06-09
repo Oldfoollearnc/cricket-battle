@@ -9,6 +9,7 @@ import { create } from 'zustand';
 import { CanvasNode, Connection, Value } from '../types';
 import { executeGraph, executeIncremental, topologicalSort } from '../engine/GraphExecutor';
 import { getNodeDefinition } from '../engine/NodeRegistry';
+import { useHistoryStore } from './historyStore';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface GraphState {
@@ -53,10 +54,13 @@ export interface GraphState {
 }
 
 /**
- * 从修改点沿 DAG 向下游传播脏标记
- * 只传播到直接和间接下游节点，不修改上游
+ * [R1-5] 拆分脏标记传播语义：
+ * - markSelfAndDownstream: 标记 startNodeId 及其所有下游节点为脏（用于 setNodeInput、connectNodes 等）
+ * - markDownstream: 只标记 startNodeId 的下游节点（不标记自身），调用方按需选择
  */
-function propagateDirty(
+
+/** 标记指定节点及其所有下游节点为脏 */
+function markSelfAndDownstream(
   startNodeId: string,
   connections: Connection[],
   existing: Set<string>
@@ -71,7 +75,6 @@ function propagateDirty(
     visited.add(current);
     dirty.add(current);
 
-    // 找到所有以 current 为源的连线，标记目标节点为脏
     for (const conn of connections) {
       if (conn.sourceNodeId === current) {
         queue.push(conn.targetNodeId);
@@ -81,6 +84,34 @@ function propagateDirty(
 
   return dirty;
 }
+
+/** 只标记下游节点（不包括 startNodeId 自身） */
+function markDownstream(
+  startNodeId: string,
+  connections: Connection[],
+  existing: Set<string>
+): Set<string> {
+  const dirty = new Set(existing);
+  const visited = new Set<string>();
+  const queue = [startNodeId];
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    if (visited.has(current)) continue;
+    visited.add(current);
+
+    for (const conn of connections) {
+      if (conn.sourceNodeId === current) {
+        const targetId = conn.targetNodeId;
+        dirty.add(targetId);
+        queue.push(targetId);
+      }
+    }
+  }
+
+  return dirty;
+}
+
 
 export const useGraphStore = create<GraphState>((set, get) => ({
   nodes: [],
@@ -122,12 +153,28 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       const newDirty = new Set(state.dirtyNodeIds);
       newDirty.delete(nodeId);
 
+      // [R1-11] 收集被断开连线的目标节点，标记它们及其下游为脏
+      const disconnectedTargets = new Set<string>();
+      for (const edge of state.edges) {
+        if (edge.sourceNodeId === nodeId) {
+          disconnectedTargets.add(edge.targetNodeId);
+        }
+      }
+
+      const newEdges = state.edges.filter(
+        (e) => e.sourceNodeId !== nodeId && e.targetNodeId !== nodeId
+      );
+
+      // 对每个被断开的目标节点传播脏标记
+      let propagatedDirty = newDirty;
+      for (const targetId of disconnectedTargets) {
+        propagatedDirty = markSelfAndDownstream(targetId, newEdges, propagatedDirty);
+      }
+
       return {
         nodes: state.nodes.filter((n) => n.id !== nodeId),
-        edges: state.edges.filter(
-          (e) => e.sourceNodeId !== nodeId && e.targetNodeId !== nodeId
-        ),
-        dirtyNodeIds: newDirty,
+        edges: newEdges,
+        dirtyNodeIds: propagatedDirty,
       };
     });
   },
@@ -151,8 +198,10 @@ export const useGraphStore = create<GraphState>((set, get) => ({
         return { ...n, inputs: newInputs, status: 'idle' as const };
       });
 
-      // 传播脏标记到下游
-      const dirty = propagateDirty(nodeId, edges, state.dirtyNodeIds);
+      // [R1-5] 传播脏标记到自身及下游。
+      // 虽然 setNodeInput 已修改该节点，但节点仍需进入 dirtySet 供 executeDirty 拾取。
+      // 调用方如只需标记下游（不标记自身），应直接使用 markDownstream。
+      const dirty = markSelfAndDownstream(nodeId, edges, state.dirtyNodeIds);
 
       return {
         nodes: newNodes,
@@ -178,8 +227,10 @@ export const useGraphStore = create<GraphState>((set, get) => ({
         targetPort,
       };
 
-      // 连线变更后，目标节点及其下游需要重算
-      const dirty = propagateDirty(targetId, [...filtered, newEdge], state.dirtyNodeIds);
+      // [R1-7] 为什么用 [...filtered, newEdge] 而不是 state.edges？
+      // 因为脏标记传播应基于即将生效的新拓扑：新连线已确定要加入，
+      // 用旧 edges 会漏掉通过新连线可达的下游节点。
+      const dirty = markSelfAndDownstream(targetId, [...filtered, newEdge], state.dirtyNodeIds);
 
       return {
         edges: [...filtered, newEdge],
@@ -198,7 +249,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       const newEdges = state.edges.filter((e) => e.id !== edgeId);
 
       // 断开连线后，目标节点及其下游需要重算
-      const dirty = propagateDirty(edge.targetNodeId, newEdges, state.dirtyNodeIds);
+      const dirty = markSelfAndDownstream(edge.targetNodeId, newEdges, state.dirtyNodeIds);
 
       return {
         edges: newEdges,
@@ -268,7 +319,14 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     }
 
     const startNodeId = order[earliestIdx];
-    const result = executeIncremental(nodes, edges, startNodeId, executionResults);
+    // [R1-1] 传入完整 dirtyNodeIds，让 executeIncremental 计算正确的受影响节点集合
+    const result = executeIncremental(nodes, edges, startNodeId, executionResults, undefined, dirtyNodeIds);
+
+    // [R1-1] 合并非受影响节点的旧输出，避免丢失（双保险）
+    const mergedOutputs = new Map(executionResults);
+    for (const [key, val] of result.nodeOutputs) {
+      mergedOutputs.set(key, val);
+    }
 
     const updatedNodes = nodes.map((n) => {
       const outputs = result.nodeOutputs.get(n.id);
@@ -287,7 +345,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 
     set({
       nodes: updatedNodes,
-      executionResults: result.nodeOutputs,
+      executionResults: mergedOutputs,
       dirtyNodeIds: new Set(),
       lastExecutionSuccess: result.success,
       lastExecutionErrors: result.nodeErrors,
@@ -297,7 +355,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   markDirty: (nodeId: string) => {
     const { edges } = get();
     set((state) => ({
-      dirtyNodeIds: propagateDirty(nodeId, edges, state.dirtyNodeIds),
+      dirtyNodeIds: markSelfAndDownstream(nodeId, edges, state.dirtyNodeIds),
     }));
   },
 
@@ -354,8 +412,18 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     return result;
   },
 
-  setNodes: (nodes: CanvasNode[]) => set({ nodes }),
-  setEdges: (edges: Connection[]) => set({ edges }),
+  // [R1-6] 批量设置节点/连线后清空执行结果，强制下次重新计算
+  setNodes: (nodes: CanvasNode[]) => set((state) => ({
+    nodes,
+    executionResults: new Map(),
+    dirtyNodeIds: new Set(nodes.map((n) => n.id)),
+  })),
+  setEdges: (edges: Connection[]) => set((state) => ({
+    edges,
+    executionResults: new Map(),
+    // 连线变更后，所有节点都可能受影响，标记全部为脏
+    dirtyNodeIds: new Set(state.nodes.map((n) => n.id)),
+  })),
 
   clearAll: () => {
     set({
@@ -368,3 +436,12 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     });
   },
 }));
+
+/**
+ * [R1-8] resetApp - 同时清空 graphStore 和 historyStore
+ * 提供应用级别的重置入口，确保两个 store 状态一致
+ */
+export function resetApp(): void {
+  useGraphStore.getState().clearAll();
+  useHistoryStore.getState().clearHistory();
+}

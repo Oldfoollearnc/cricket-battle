@@ -5,7 +5,6 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useHistoryStore } from './historyStore';
-import * as HistoryTree from '../history/HistoryTree';
 import { SerializedCanvas } from '../types';
 
 function makeSnapshot(label: string): SerializedCanvas {
@@ -25,7 +24,6 @@ function makeSnapshot(label: string): SerializedCanvas {
 
 describe('historyStore', () => {
   beforeEach(() => {
-    HistoryTree.clearHistory();
     useHistoryStore.getState().clearHistory();
   });
 
