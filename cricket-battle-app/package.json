@@ -1,0 +1,18 @@
+{
+  "name": "cricket-battle-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cricket Battle Calculator - 实时对战竞技计算工具",
+  "scripts": {
+    "dev:server": "cd server && npm run dev",
+    "dev:client": "cd client && npm run dev",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "build": "cd client && npm run build",
+    "test": "cd server && npm test && cd ../client && npm test",
+    "test:server": "cd server && npm test",
+    "test:client": "cd client && npm test"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
