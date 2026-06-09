@@ -1,6 +1,6 @@
 export const meta = {
   name: 'cricket-battle',
-  description: '电子斗蛐蛐 v2 - 单轮执行，支持人类裁判检查点',
+  description: '电子斗蛐蛐 v3 - 修复bug追踪和增量修复',
   phases: [
     { title: '需求整理', detail: '标准化需求' },
     { title: '核心循环', detail: '单轮：架构→代码→测试→评审→总结→批判' },
@@ -27,25 +27,18 @@ ${raw}
   architect: (req, ctx) => `你是一个有10年经验的系统架构师。
 性格：全局思维，喜欢画框图，说话爱用"从系统层面看"。
 
-职责：
-- 分析需求，提出技术方案
-- 选技术栈，必须给≥2个候选方案，说明为什么选A不选B
-- 定义模块划分（具体到每个模块负责什么）
-
-约束：
-- 方案必须可落地
-- 模块划分要具体，不要只写模块名
+${ctx ? '这是后续轮次。你必须延续前轮的技术方案，不要重新设计。只根据反馈做微调。' : '这是第一轮，从零开始设计。'}
 
 需求：
 ${req}
 
-${ctx || '你是第一个发言的角色。'}
+${ctx ? '前轮上下文：\n' + ctx : ''}
 
 输出格式：
 ## 技术方案
 ### 候选方案对比
 ### 选定方案（技术栈 + 架构描述）
-### 模块划分（每个模块名称 + 职责）
+### 模块划分
 ### 接口定义`,
 
   engineer_new: (req, arch) => `你是一个务实的高级工程师。
@@ -69,53 +62,47 @@ ${arch}
 - path/to/file: 描述
 
 ## 代码
-（每个文件完整代码，用代码块包裹）
-## 自测结果
-（跑了哪些测试，结果如何）`,
+（每个文件完整代码）
+## 自测结果`,
 
-  engineer_fix: (req, currentCode, bugTracker) => `你是一个务实的高级工程师。
+  engineer_fix: (req, codeSnapshot, bugList) => `你是一个务实的高级工程师。
 性格：直接，"别废话先跑起来"。
 
 这是修复轮。你必须：
 1. 只修改下面标记为 open 的 bug 相关的代码
 2. 不要动其他任何代码
-3. 输出 diff 格式（不是完整代码）
+3. 输出 diff 格式
 
 需求：
 ${req}
 
-当前代码：
-${currentCode}
+当前代码（关键部分）：
+${codeSnapshot}
 
-Bug 追踪表：
-${bugTracker}
+待修复 Bug 列表：
+${bugList}
 
 输出格式：
 ## 修复内容
-（每个修复用 diff 格式）
 ### Bug#N: [标题]
 \`\`\`diff
-// 修改前
 - 旧代码
-// 修改后
 + 新代码
 \`\`\`
 修复理由：...
 
-## 自测结果
-（验证了哪些bug已修复）`,
+## 自测结果`,
 
-  tester: (req, code, bugTracker, round) => `你是一个毒舌但精准的QA专家。
+  tester: (req, code, bugList, round) => `你是一个毒舌但精准的QA专家。
 性格：喜欢反问，"这里有个坑你看到没？"
 
-${round > 1 ? `你必须：
-1. 先验证上一轮的 open bugs 是否已修复
-2. 然后在新代码中找新bug
-3. 不要重复报告已确认 fixed 的 bug` : '在代码中找 bug、边界情况、逻辑漏洞。'}
+${round > 1 ? `重要！这是第${round}轮。你必须：
+1. 先验证下面"待验证Bug列表"中的每个bug是否已修复
+2. 然后在代码中找新bug
+3. 不要重复报告已确认fixed的bug` : '在代码中找 bug、边界情况、逻辑漏洞。'}
 
 约束：
 - 每个bug：严重程度（P0/P1/P2）、描述、复现步骤、修复建议
-- 已修复的bug标注 ✅，未修复的标注 ❌
 
 需求：
 ${req}
@@ -123,30 +110,26 @@ ${req}
 代码：
 ${code}
 
-${bugTracker ? 'Bug 追踪表（上轮状态）：\n' + bugTracker : ''}
+${bugList ? '待验证Bug列表：\n' + bugList : ''}
 
 输出格式：
 ## Bug 验证
 ### 已修复 ✅
 - Bug#N: [标题] → 已修复
 ### 未修复 ❌
-- Bug#N: [标题] → 未修复，原因：...
+- Bug#N: [标题] → 未修复
 ### 新发现
 #### Bug#[NEW]: [标题]
 - 严重程度: P0/P1/P2
 - 描述: ...
 - 复现步骤: ...
 - 修复建议: ...
-
-## 结论
-（本轮新发现X个，已修复Y个，未修复Z个）`,
+## 结论`,
 
   product: (req, code) => `你是一个用户体验至上的产品经理。
 性格：爱举具体场景，"你妈会用这个吗？"
 
-约束：
-- 建议必须具体到场景
-- 跟已有产品重叠必须指出差异化
+约束：建议必须具体到场景，跟已有产品重叠必须指出差异化
 
 需求：
 ${req}
@@ -161,32 +144,32 @@ ${code}
 ### 拓展建议
 ### 差异化分析`,
 
-  summarizer: (req, roundOutputs, round) => `你是冷静的会议记录员。请简洁汇总。
+  summarizer: (req, context, round) => `你是冷静的会议记录员。请简洁汇总（每角色限2句话）。
 
 需求：
 ${req}
 
 本轮各角色输出：
-${roundOutputs}
+${context}
 
-输出格式（每个角色限2句话）：
+输出格式：
 ## 第${round}轮总结
 ### 各角色观点（每角色2句话）
 ### 待办事项
 ### 结论`,
 
-  critic: (req, roundOutputs, round) => `你是一个有理有据的唱反调专家。
+  critic: (req, context, round) => `你是一个有理有据的唱反调专家。
 性格：戏剧化，"等等，你们都忽略了…"。
 
 约束：
-- 每个反对必须给出：问题 + 为什么 + 你认为应该怎样
-- 没有新反对就说"本轮无新反对"，不要硬挑刺
+- 每个反对必须给出：问题 + 为什么 + 应该怎样
+- 没有新反对就说"本轮无新反对"
 
 需求：
 ${req}
 
 所有角色输出：
-${roundOutputs}
+${context}
 
 输出格式：
 ## 批判意见
@@ -262,93 +245,79 @@ const USER_PROMPTS = {
 
 // ===== Bug 追踪工具 =====
 
-function parseBugsFromTesterOutput(testerOutput) {
-  const bugs = [];
-  const lines = testerOutput.split('\n');
-  let currentBug = null;
-
-  for (const line of lines) {
-    const newBugMatch = line.match(/####?\s*Bug#?\[?NEW\]?:?\s*(.+)/i);
-    const existBugMatch = line.match(/####?\s*Bug#(\d+):?\s*(.+)/i);
-
-    if (newBugMatch) {
-      if (currentBug) bugs.push(currentBug);
-      currentBug = { id: `NEW_${bugs.length + 1}`, title: newBugMatch[1].trim(), severity: 'P2', status: 'open', round: 0, desc: '', steps: '', suggestion: '' };
-    } else if (existBugMatch && !line.includes('已修复') && !line.includes('未修复')) {
-      if (currentBug) bugs.push(currentBug);
-      currentBug = { id: existBugMatch[1], title: existBugMatch[2].trim(), severity: 'P2', status: 'open', round: 0, desc: '', steps: '', suggestion: '' };
-    }
-
-    if (currentBug) {
-      if (line.includes('P0')) currentBug.severity = 'P0';
-      if (line.includes('P1')) currentBug.severity = 'P1';
-      if (line.includes('P2')) currentBug.severity = 'P2';
-      if (line.includes('描述')) currentBug.desc = line.replace(/.*描述[:：]\s*/, '').trim();
-      if (line.includes('复现')) currentBug.steps = line.replace(/.*复现[:：]\s*/, '').trim();
-      if (line.includes('修复建议')) currentBug.suggestion = line.replace(/.*修复建议[:：]\s*/, '').trim();
-    }
-  }
-  if (currentBug) bugs.push(currentBug);
-  return bugs;
-}
-
 function formatBugTracker(bugs) {
   if (!bugs || bugs.length === 0) return '（无 bug）';
   return bugs.map(b =>
-    `- Bug#${b.id} [${b.severity}] ${b.title} → ${b.status === 'fixed' ? '✅ fixed' : '❌ open'}${b.suggestion ? ' → 建议：' + b.suggestion : ''}`
+    `- [${b.id}] [${b.severity}] ${b.title} → ${b.status === 'fixed' ? '✅ fixed' : '❌ open'}${b.suggestion ? ' | 建议：' + b.suggestion : ''}`
   ).join('\n');
 }
 
-function updateBugTracker(existingBugs, testerOutput, round) {
-  const verified = [];
+function parseBugsFromTester(testerOutput, existingBugs, round) {
+  const updated = JSON.parse(JSON.stringify(existingBugs || []));
 
-  // 解析已修复
-  const fixedMatches = testerOutput.match(/Bug#(\d+).*?已修复/gi) || [];
-  const fixedIds = fixedMatches.map(m => m.match(/Bug#(\d+)/)?.[1]).filter(Boolean);
-
-  // 解析未修复
-  const unfixedMatches = testerOutput.match(/Bug#(\d+).*?未修复/gi) || [];
-  const unfixedIds = unfixedMatches.map(m => m.match(/Bug#(\d+)/)?.[1]).filter(Boolean);
-
-  // 更新已有bug状态
-  for (const bug of existingBugs) {
-    if (fixedIds.includes(String(bug.id))) {
-      bug.status = 'fixed';
+  // 标记已修复
+  const fixedSection = testerOutput.match(/### 已修复 ✅([\s\S]*?)(?=###|$)/);
+  if (fixedSection) {
+    const fixedIds = [];
+    const idRegex = /Bug#?([\w-]+)/g;
+    let m;
+    while ((m = idRegex.exec(fixedSection[1])) !== null) fixedIds.push(m[1]);
+    for (const bug of updated) {
+      if (fixedIds.some(fid => bug.id.includes(fid) || fid.includes(bug.id))) {
+        bug.status = 'fixed';
+      }
     }
-    bug.round = round;
-    verified.push(bug);
   }
 
   // 解析新bug
-  const newBugs = parseBugsFromTesterOutput(testerOutput);
-  for (const nb of newBugs) {
-    if (nb.id.startsWith('NEW_')) {
-      nb.id = String(existingBugs.length + newBugs.indexOf(nb) + 1);
-      nb.round = round;
-      verified.push(nb);
+  const newBugSection = testerOutput.match(/### 新发现([\s\S]*?)(?=## 结论|$)/);
+  if (newBugSection) {
+    const bugBlocks = newBugSection[1].split(/####?\s*Bug/);
+    for (const block of bugBlocks) {
+      if (!block.trim()) continue;
+      const titleMatch = block.match(/#?\[?NEW-?(\d*)\]?:?\s*(.+)/i) || block.match(/#?(\d+):?\s*(.+)/);
+      if (!titleMatch) continue;
+      const title = titleMatch[2].trim();
+      const sevMatch = block.match(/严重程度:\s*(P[012])/);
+      const descMatch = block.match(/描述:\s*(.+)/);
+      const stepsMatch = block.match(/复现步骤:\s*(.+)/);
+      const suggestMatch = block.match(/修复建议:\s*(.+)/);
+
+      updated.push({
+        id: `R${round}-${updated.length + 1}`,
+        title,
+        severity: sevMatch?.[1] || 'P2',
+        status: 'open',
+        round,
+        desc: descMatch?.[1]?.trim() || '',
+        steps: stepsMatch?.[1]?.trim() || '',
+        suggestion: suggestMatch?.[1]?.trim() || '',
+      });
     }
   }
 
-  return verified;
+  return updated;
 }
 
-function checkConvergence(bugs, consecutiveCleanRounds, round) {
+function checkConvergence(bugs, round) {
   const openBugs = bugs.filter(b => b.status === 'open');
-  const newBugsThisRound = bugs.filter(b => b.round === round);
+  const fixedBugs = bugs.filter(b => b.status === 'fixed');
+  const newThisRound = bugs.filter(b => b.round === round);
 
-  if (openBugs.length === 0 && newBugsThisRound.length === 0) {
-    return { converged: true, consecutive: consecutiveCleanRounds + 1, reason: '无新bug且所有bug已修复' };
-  }
-  if (newBugsThisRound.length === 0) {
-    return { converged: consecutiveCleanRounds + 1 >= 2, consecutive: consecutiveCleanRounds + 1, reason: `无新bug，但还有${openBugs.length}个未修复` };
-  }
-  return { converged: false, consecutive: 0, reason: `发现${newBugsThisRound.length}个新bug` };
+  return {
+    openCount: openBugs.length,
+    fixedCount: fixedBugs.length,
+    newCount: newThisRound.length,
+    reason: newThisRound.length === 0
+      ? `无新bug，${openBugs.length}个未修复`
+      : `发现${newThisRound.length}个新bug，${openBugs.length}个未修复`,
+  };
 }
 
 // ===== 主流程 =====
 
 async function main(args) {
-  const { requirement, mode, round: inputRound, previousContext, bugTracker: prevBugTracker } = typeof args === 'string'
+  const { requirement, mode, round: inputRound, previousContext, bugTracker: prevBugTracker, codeSnapshot } = typeof args === 'string'
     ? { requirement: args, mode: 'full' }
     : args;
 
@@ -359,21 +328,18 @@ async function main(args) {
 
   // ===== 模式1：完整流程（首次运行） =====
   if (mode === 'full' || !mode) {
-    log('🦗 电子斗蛐蛐 v2 启动！');
+    log('🦗 电子斗蛐蛐 v3 启动！');
     log('');
 
-    // 需求收集
     phase('需求整理');
     const standardizedReq = await agent(PROMPTS.requirement(requirement), { label: '需求整理', phase: '需求整理' });
     log('✅ 需求整理完成');
     log('');
 
-    // 第1轮核心循环
     phase('核心循环 - 第1轮');
     const round1 = await runCoreRound(standardizedReq, 1, null, null);
 
-    // 输出摘要供人类判断
-    const summary = generateRoundSummary(standardizedReq, 1, round1);
+    const summary = generateRoundSummary(1, round1);
     log('');
     log(summary);
     log('');
@@ -384,8 +350,8 @@ async function main(args) {
       round: 1,
       summary,
       requirement: standardizedReq,
-      roundData: round1,
       bugTracker: round1.bugTracker,
+      codeSnapshot: round1.codeSnapshot,
     };
   }
 
@@ -395,9 +361,13 @@ async function main(args) {
     log(`🔄 第${roundNum}轮核心循环`);
     log('');
 
-    const roundData = await runCoreRound(requirement, roundNum, previousContext, prevBugTracker);
+    // 验证bugTracker
+    const bugs = prevBugTracker || [];
+    log(`  📋 上轮bug: ${bugs.filter(b => b.status === 'open').length}个open, ${bugs.filter(b => b.status === 'fixed').length}个fixed`);
 
-    const summary = generateRoundSummary(requirement, roundNum, roundData);
+    const roundData = await runCoreRound(requirement, roundNum, previousContext, bugs, codeSnapshot);
+
+    const summary = generateRoundSummary(roundNum, roundData);
     log('');
     log(summary);
     log('');
@@ -408,8 +378,8 @@ async function main(args) {
       round: roundNum,
       summary,
       requirement,
-      roundData,
       bugTracker: roundData.bugTracker,
+      codeSnapshot: roundData.codeSnapshot,
     };
   }
 
@@ -417,8 +387,6 @@ async function main(args) {
   if (mode === 'review') {
     phase('用户评审');
     log('👥 用户评审轮开始');
-
-    const codeSummary = previousContext || '';
 
     const userRoles = [
       { key: 'delivery', label: '外卖骑手', emoji: '🛵', prompt: USER_PROMPTS.delivery },
@@ -429,7 +397,7 @@ async function main(args) {
     ];
 
     const reviews = await Promise.all(
-      userRoles.map(r => agent(r.prompt(requirement, codeSummary), { label: `评审-${r.label}`, phase: '用户评审' }).then(out => ({ ...r, output: out })))
+      userRoles.map(r => agent(r.prompt(requirement, previousContext || ''), { label: `评审-${r.label}`, phase: '用户评审' }).then(out => ({ ...r, output: out })))
     );
 
     for (const r of reviews) log(`  ${r.emoji} ${r.label}完成`);
@@ -442,7 +410,7 @@ async function main(args) {
     phase('最终整合');
 
     const finalSummary = await agent(
-      `你是总结者。汇总所有内容生成最终报告。${previousContext}`,
+      `你是总结者。汇总所有内容生成最终报告。\n\n${previousContext}`,
       { label: '最终总结', phase: '最终整合' }
     );
 
@@ -453,27 +421,30 @@ async function main(args) {
 
 // ===== 执行单轮核心循环 =====
 
-async function runCoreRound(req, round, previousContext, prevBugTracker) {
+async function runCoreRound(req, round, previousContext, prevBugTracker, prevCodeSnapshot) {
   const contextParts = [];
   const outputs = {};
 
-  // A: 架构师（第1轮完整设计，后续轮次只微调）
+  // A: 架构师
+  const archCtx = round === 1 ? null : `前轮上下文：\n${previousContext || ''}`;
   outputs.architect = await agent(
-    PROMPTS.architect(req, round === 1 ? null : `前轮上下文：\n${previousContext}`),
+    PROMPTS.architect(req, archCtx),
     { label: `R${round}-架构师`, phase: `核心循环 - 第${round}轮` }
   );
   contextParts.push(`【架构师】\n${outputs.architect}`);
   log('  🏗️ 架构师完成');
 
-  // B: 工程师（第1轮写完整代码，后续轮次只输出diff）
+  // B: 工程师
   if (round === 1) {
     outputs.engineer = await agent(
       PROMPTS.engineer_new(req, outputs.architect),
       { label: `R${round}-工程师`, phase: `核心循环 - 第${round}轮` }
     );
   } else {
+    const bugList = formatBugTracker(prevBugTracker?.filter(b => b.status === 'open') || []);
+    const codeSnap = prevCodeSnapshot || '（无代码快照）';
     outputs.engineer = await agent(
-      PROMPTS.engineer_fix(req, previousContext, formatBugTracker(prevBugTracker)),
+      PROMPTS.engineer_fix(req, codeSnap, bugList),
       { label: `R${round}-工程师`, phase: `核心循环 - 第${round}轮` }
     );
   }
@@ -481,16 +452,16 @@ async function runCoreRound(req, round, previousContext, prevBugTracker) {
   log('  👨‍💻 工程师完成');
 
   // C: 测试员（带bug追踪表）
+  const bugListForTester = prevBugTracker ? formatBugTracker(prevBugTracker) : null;
   outputs.tester = await agent(
-    PROMPTS.tester(req, outputs.engineer, prevBugTracker ? formatBugTracker(prevBugTracker) : null, round),
+    PROMPTS.tester(req, outputs.engineer, bugListForTester, round),
     { label: `R${round}-测试员`, phase: `核心循环 - 第${round}轮` }
   );
   contextParts.push(`【测试员】\n${outputs.tester}`);
   log('  🧪 测试员完成');
 
   // 更新bug追踪表
-  const allBugs = prevBugTracker || [];
-  const updatedBugs = updateBugTracker(allBugs, outputs.tester, round);
+  const updatedBugs = parseBugsFromTester(outputs.tester, prevBugTracker || [], round);
 
   // D: 产品经理
   outputs.product = await agent(
@@ -500,7 +471,7 @@ async function runCoreRound(req, round, previousContext, prevBugTracker) {
   contextParts.push(`【产品经理】\n${outputs.product}`);
   log('  📋 产品经理完成');
 
-  // E: 总结者（压缩版）
+  // E: 总结者
   outputs.summarizer = await agent(
     PROMPTS.summarizer(req, contextParts.join('\n\n'), round),
     { label: `R${round}-总结者`, phase: `核心循环 - 第${round}轮` }
@@ -515,23 +486,27 @@ async function runCoreRound(req, round, previousContext, prevBugTracker) {
   log('  🔥 批判者完成');
 
   // 收敛判断
+  const convergence = checkConvergence(updatedBugs, round);
   const hasNewObjections = !outputs.critic.includes('无新反对');
-  const convergence = checkConvergence(updatedBugs, 0, round);
 
-  log(`  📊 Bug: ${updatedBugs.filter(b => b.status === 'open').length}个open / ${updatedBugs.filter(b => b.status === 'fixed').length}个fixed`);
+  log(`  📊 Bug: ${convergence.openCount}个open / ${convergence.fixedCount}个fixed / ${convergence.newCount}个new`);
   log(`  📊 批判: ${hasNewObjections ? '有新反对' : '无新反对'}`);
+
+  // 代码快照（工程师输出的前3000字）
+  const codeSnapshot = outputs.engineer.substring(0, 3000);
 
   return {
     outputs,
     bugTracker: updatedBugs,
     convergence: { ...convergence, hasNewObjections },
     allContext: contextParts.join('\n\n'),
+    codeSnapshot,
   };
 }
 
 // ===== 生成轮次摘要 =====
 
-function generateRoundSummary(req, round, roundData) {
+function generateRoundSummary(round, roundData) {
   const { bugTracker, convergence, outputs } = roundData;
   const openBugs = bugTracker.filter(b => b.status === 'open');
   const fixedBugs = bugTracker.filter(b => b.status === 'fixed');
@@ -542,26 +517,27 @@ function generateRoundSummary(req, round, roundData) {
   lines.push(`## Bug 状态`);
   lines.push(`- 已修复: ${fixedBugs.length}个`);
   lines.push(`- 未修复: ${openBugs.length}个`);
+  lines.push(`- 本轮新发现: ${convergence.newCount}个`);
 
   if (openBugs.length > 0) {
     lines.push('');
     lines.push('### 未修复 Bug');
-    for (const b of openBugs) {
-      lines.push(`- Bug#${b.id} [${b.severity}] ${b.title}`);
+    for (const b of openBugs.slice(0, 10)) {
+      lines.push(`- [${b.id}] [${b.severity}] ${b.title}`);
     }
+    if (openBugs.length > 10) lines.push(`- ... 还有${openBugs.length - 10}个`);
   }
 
   lines.push('');
   lines.push(`## 收敛状态`);
   lines.push(`- ${convergence.reason}`);
-  lines.push(`- 连续无新问题轮数: ${convergence.consecutive}/2`);
 
   lines.push('');
   lines.push(`## 批判者`);
-  const hasObj = !outputs.critic.includes('无新反对');
-  lines.push(hasObj ? '- 有新反对意见（详见批判者输出）' : '- 无新反对');
+  const hasObj = outputs.critic && !outputs.critic.includes('无新反对');
+  lines.push(hasObj ? '- 有新反对意见' : '- 无新反对');
 
-  if (convergence.converged) {
+  if (convergence.newCount === 0 && !hasObj) {
     lines.push('');
     lines.push('✅ **核心循环已收敛，建议进入用户评审。**');
   } else if (round >= 3) {
@@ -571,6 +547,13 @@ function generateRoundSummary(req, round, roundData) {
     lines.push('');
     lines.push(`🔄 **建议继续第${round + 1}轮。**`);
   }
+
+  // Bug追踪表（供下轮使用）
+  lines.push('');
+  lines.push('## Bug 追踪表（供下轮使用）');
+  lines.push('```json');
+  lines.push(JSON.stringify(bugTracker, null, 2));
+  lines.push('```');
 
   return lines.join('\n');
 }
